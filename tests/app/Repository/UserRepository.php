@@ -44,59 +44,76 @@ class UserRepository extends BaseRepository
     public function createOrUpdate($id = null, $request)
     { 
         $model = is_null($id) ? new User : User::findOrFail($id);
-        $model->user_type = $request['role'];
-        $model->name = $request['name'];
-        $model->company_id = $request['company_id'] != '' ? $request['company_id'] : 0;
-        $model->department_id = $request['department_id'] != '' ? $request['department_id'] : 0;
-        $model->email = $request['email'];
-        $model->dob_or_orgid = $request['dob_or_orgid'];
-        $model->phone = $request['phone'];
-        $model->mobile = $request['mobile'];
-
-
-        if (!$id || $id && $request['password']) $model->password = bcrypt($request['password']);
+        
+        $model->fill([
+            'user_type' => $request['role'],
+            'name' => $request['name'],
+            'company_id' => $request['company_id'] ?: 0,
+            'department_id' => $request['department_id'] ?: 0,
+            'email' => $request['email'],
+            'dob_or_orgid' => $request['dob_or_orgid'],
+            'phone' => $request['phone'],
+            'mobile' => $request['mobile'],
+        ]);
+    
+        if (!$id || $id && $request['password']) {
+            $model->password = bcrypt($request['password']);
+        }
+        
         $model->detachAllRoles();
         $model->save();
         $model->attachRole($request['role']);
-        $data = array();
-
+        $data = [];
+    
         if ($request['role'] == env('CUSTOMER_ROLE_ID')) {
-
-            if($request['consumer_type'] == 'paid')
-            {
-                if($request['company_id'] == '')
-                {
-                    $type = Type::where('code', 'paid')->first();
-                    $company = Company::create(['name' => $request['name'], 'type_id' => $type->id, 'additional_info' => 'Created automatically for user ' . $model->id]);
-                    $department = Department::create(['name' => $request['name'], 'company_id' => $company->id, 'additional_info' => 'Created automatically for user ' . $model->id]);
-
-                    $model->company_id = $company->id;
-                    $model->department_id = $department->id;
-                    $model->save();
-                }
+            if($request['consumer_type'] == 'paid' && $request['company_id'] == '') {
+                $type = Type::where('code', 'paid')->first();
+                $company = Company::create([
+                    'name' => $request['name'], 
+                    'type_id' => $type->id, 
+                    'additional_info' => 'Created automatically for user ' . $model->id
+                ]);
+                $department = Department::create([
+                    'name' => $request['name'], 
+                    'company_id' => $company->id, 
+                    'additional_info' => 'Created automatically for user ' . $model->id
+                ]);
+                $model->company_id = $company->id;
+                $model->department_id = $department->id;
+                $model->save();
             }
-
+    
             $user_meta = UserMeta::firstOrCreate(['user_id' => $model->id]);
             $old_meta = $user_meta->toArray();
-            $user_meta->consumer_type = $request['consumer_type'];
-            $user_meta->customer_type = $request['customer_type'];
-            $user_meta->username = $request['username'];
-            $user_meta->post_code = $request['post_code'];
-            $user_meta->address = $request['address'];
-            $user_meta->city = $request['city'];
-            $user_meta->town = $request['town'];
-            $user_meta->country = $request['country'];
-            $user_meta->reference = (isset($request['reference']) && $request['reference'] == 'yes') ? '1' : '0';
-            $user_meta->additional_info = $request['additional_info'];
-            $user_meta->cost_place = isset($request['cost_place']) ? $request['cost_place'] : '';
-            $user_meta->fee = isset($request['fee']) ? $request['fee'] : '';
-            $user_meta->time_to_charge = isset($request['time_to_charge']) ? $request['time_to_charge'] : '';
-            $user_meta->time_to_pay = isset($request['time_to_pay']) ? $request['time_to_pay'] : '';
-            $user_meta->charge_ob = isset($request['charge_ob']) ? $request['charge_ob'] : '';
-            $user_meta->customer_id = isset($request['customer_id']) ? $request['customer_id'] : '';
-            $user_meta->charge_km = isset($request['charge_km']) ? $request['charge_km'] : '';
-            $user_meta->maximum_km = isset($request['maximum_km']) ? $request['maximum_km'] : '';
+            $user_meta->fill([
+                'consumer_type' => $request['consumer_type'],
+                'customer_type' => $request['customer_type'],
+                'username' => $request['username'],
+                'post_code' => $request['post_code'],
+                'address' => $request['address'],
+                'city' => $request['city'],
+                'town' => $request['town'],
+                'country' => $request['country'],
+                'reference' => (isset($request['reference']) && $request['reference'] == 'yes') ? '1' : '0',
+                'additional_info' => $request['additional_info'],
+                'cost_place' => $request['cost_place'] ?? '',
+                'fee' => $request['fee'] ?? '',
+                'time_to_charge' => $request['time_to_charge'] ?? '',
+                'time_to_pay' => $request['time_to_pay'] ?? '',
+                'charge_ob' => $request['charge_ob'] ?? '',
+                'customer_id' => $request['customer_id'] ?? '',
+                'charge_km' => $request['charge_km'] ?? '',
+                'maximum_km' => $request['maximum_km'] ?? '',
+            ]);
             $user_meta->save();
+            $new_meta = $user_meta->toArray();
+    
+            $blacklistUpdated = [];
+            $userBlacklist = UsersBlacklist::where('user_id', $id)->get();
+            $userTranslId = collect($userBlacklist)->pluck('translator_id')->all();
+    
+            $diff = null;
+            if ($request['translator_ex']) {
             $new_meta = $user_meta->toArray();
 
             $blacklistUpdated = [];

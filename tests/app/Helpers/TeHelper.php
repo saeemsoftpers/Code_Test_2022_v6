@@ -39,27 +39,36 @@ class TeHelper
         }
         return $jobs;
     }
-
+    // $due_time and $created_at are properly validated before passing them into this function. 
+    // This will help to prevent unexpected errors and ensure that the function behaves as expected.
     public static function willExpireAt($due_time, $created_at)
     {
+        // Parse the input strings into Carbon instances
         $due_time = Carbon::parse($due_time);
         $created_at = Carbon::parse($created_at);
-
-        $difference = $due_time->diffInHours($created_at);
-
-
-        if($difference <= 90)
-            $time = $due_time;
-        elseif ($difference <= 24) {
-            $time = $created_at->addMinutes(90);
-        } elseif ($difference > 24 && $difference <= 72) {
-            $time = $created_at->addHours(16);
-        } else {
-            $time = $due_time->subHours(48);
+        
+        // Calculate the difference between the two dates in hours
+        $difference_in_hours = $due_time->diffInHours($created_at);
+    
+        // Define the thresholds for each expiration case in hours
+        $case_1_threshold = 90;
+        $case_2_threshold = 24;
+        $case_3_threshold = 72;
+    
+        // Determine the expiration time based on the difference in hours
+        if ($difference_in_hours <= $case_1_threshold) {
+            return $due_time->format('Y-m-d H:i:s');
         }
-
-        return $time->format('Y-m-d H:i:s');
-
+        
+        if ($difference_in_hours <= $case_2_threshold) {
+            return $created_at->addMinutes(90)->format('Y-m-d H:i:s');
+        }
+        
+        if ($difference_in_hours <= $case_3_threshold) {
+            return $created_at->addHours(16)->format('Y-m-d H:i:s');
+        }
+    
+        return $due_time->subHours(48)->format('Y-m-d H:i:s');
     }
 
 }

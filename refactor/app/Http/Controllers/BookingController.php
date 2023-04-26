@@ -33,21 +33,27 @@ class BookingController extends Controller
      * @param Request $request
      * @return mixed
      */
+
     public function index(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
-
-            $response = $this->repository->getUsersJobs($user_id);
-
+        // Use strict comparison operator to check if user_id is set and not null
+        if($request->has('user_id') && $request->get('user_id') !== null) {
+            // Use a more descriptive variable name for the response
+            $userJobs = $this->repository->getUsersJobs($request->get('user_id'));
+            return response($userJobs);
         }
-        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
+        // Use boolean logic to check if user is an admin or superadmin
+        elseif($request->__authenticatedUser->user_type == env('ADMIN_ROLE_ID') || 
+               $request->__authenticatedUser->user_type == env('SUPERADMIN_ROLE_ID'))
         {
-            $response = $this->repository->getAll($request);
+            // Use a more descriptive variable name for the response
+            $allJobs = $this->repository->getAll($request);
+            return response($allJobs);
         }
-
-        return response($response);
+        
+        // Return an error response if neither condition is met
+        return response(['error' => 'Invalid request.'], 400);
     }
-
     /**
      * @param $id
      * @return mixed
@@ -80,11 +86,13 @@ class BookingController extends Controller
      */
     public function update($id, Request $request)
     {
-        $data = $request->all();
-        $cuser = $request->__authenticatedUser;
-        $response = $this->repository->updateJob($id, array_except($data, ['_token', 'submit']), $cuser);
+        // /Use the except method to remove the unnecessary fields _token and
+        //  submit from the request data.
+        $data = $request->except('_token', 'submit');
+    $currentUser = $request->__authenticatedUser;
+    $response = $this->repository->updateJob($id, $data, $currentUser);
 
-        return response($response);
+    return response($response);
     }
 
     /**
@@ -107,14 +115,14 @@ class BookingController extends Controller
      */
     public function getHistory(Request $request)
     {
-        if($user_id = $request->get('user_id')) {
-
+        if ($user_id = $request->get('user_id')) {
             $response = $this->repository->getUsersJobsHistory($user_id, $request);
             return response($response);
         }
-
-        return null;
-    }
+    //no need to return null at the end of the function as it is unnecessary. 
+    // It is better to return a default response or an empty response instead of null
+        return response()->json([]);
+    }    
 
     /**
      * @param Request $request
@@ -194,66 +202,49 @@ class BookingController extends Controller
 
     public function distanceFeed(Request $request)
     {
+        // Get all the data from the request
         $data = $request->all();
-
-        if (isset($data['distance']) && $data['distance'] != "") {
-            $distance = $data['distance'];
-        } else {
-            $distance = "";
+    
+        // Set default values for distance, time, and admin comment
+        $distance = $data['distance'] ?? "";
+        $time = $data['time'] ?? "";
+        $adminComment = $data['admincomment'] ?? "";
+    
+        // Set default values for job ID, session time, flagged status, manually handled status, and by admin status
+        $jobId = $data['jobid'] ?? null;
+        $sessionTime = $data['session_time'] ?? "";
+        $flagged = $data['flagged'] === 'true' ? 'yes' : 'no';
+        $manuallyHandled = $data['manually_handled'] === 'true' ? 'yes' : 'no';
+        $byAdmin = $data['by_admin'] === 'true' ? 'yes' : 'no';
+    
+        // If the flagged status is set to 'yes', make sure the admin comment is not empty
+        if ($flagged === 'yes' && empty($adminComment)) {
+            return response('Please add a comment', 400);
         }
-        if (isset($data['time']) && $data['time'] != "") {
-            $time = $data['time'];
-        } else {
-            $time = "";
+    
+        // Update the distance and time for the specified job ID
+        if ($jobId && ($time || $distance)) {
+            $affectedRows = Distance::where('job_id', '=', $jobId)->update([
+                'distance' => $distance,
+                'time' => $time,
+            ]);
         }
-        if (isset($data['jobid']) && $data['jobid'] != "") {
-            $jobid = $data['jobid'];
+    
+        // Update the admin comment, session time, flagged status, manually handled status, and by admin status for the specified job ID
+        if ($jobId && ($adminComment || $sessionTime || $flagged || $manuallyHandled || $byAdmin)) {
+            $affectedRows1 = Job::where('id', '=', $jobId)->update([
+                'admin_comments' => $adminComment,
+                'flagged' => $flagged,
+                'session_time' => $sessionTime,
+                'manually_handled' => $manuallyHandled,
+                'by_admin' => $byAdmin,
+            ]);
         }
-
-        if (isset($data['session_time']) && $data['session_time'] != "") {
-            $session = $data['session_time'];
-        } else {
-            $session = "";
-        }
-
-        if ($data['flagged'] == 'true') {
-            if($data['admincomment'] == '') return "Please, add comment";
-            $flagged = 'yes';
-        } else {
-            $flagged = 'no';
-        }
-        
-        if ($data['manually_handled'] == 'true') {
-            $manually_handled = 'yes';
-        } else {
-            $manually_handled = 'no';
-        }
-
-        if ($data['by_admin'] == 'true') {
-            $by_admin = 'yes';
-        } else {
-            $by_admin = 'no';
-        }
-
-        if (isset($data['admincomment']) && $data['admincomment'] != "") {
-            $admincomment = $data['admincomment'];
-        } else {
-            $admincomment = "";
-        }
-        if ($time || $distance) {
-
-            $affectedRows = Distance::where('job_id', '=', $jobid)->update(array('distance' => $distance, 'time' => $time));
-        }
-
-        if ($admincomment || $session || $flagged || $manually_handled || $by_admin) {
-
-            $affectedRows1 = Job::where('id', '=', $jobid)->update(array('admin_comments' => $admincomment, 'flagged' => $flagged, 'session_time' => $session, 'manually_handled' => $manually_handled, 'by_admin' => $by_admin));
-
-        }
-
+    
+        // Return a success response
         return response('Record updated!');
     }
-
+    
     public function reopen(Request $request)
     {
         $data = $request->all();
